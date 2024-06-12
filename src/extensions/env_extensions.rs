@@ -76,11 +76,11 @@ impl EnvExtensions for Env {
     }
 
     fn get_subscription(&self, subscription_id: u64) -> Option<Subscription> {
-        get_temporary_storage(&self).get(&subscription_id)
+        get_persistent_storage(&self).get(&subscription_id)
     }
 
     fn set_subscription(&self, subscription_id: u64, subscription: &Subscription) {
-        get_temporary_storage(&self).set(&subscription_id, subscription);
+        get_persistent_storage(&self).set(&subscription_id, subscription);
     }
 
     fn panic_if_not_admin(&self) {
@@ -94,6 +94,10 @@ impl EnvExtensions for Env {
 
 fn get_instance_storage(e: &Env) -> Instance {
     e.storage().instance()
+}
+
+fn get_persistent_storage(e: &Env) -> Temporary {
+    e.storage().temporary()
 }
 
 fn get_temporary_storage(e: &Env) -> Temporary {

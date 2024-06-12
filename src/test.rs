@@ -3,7 +3,7 @@
 use super::*;
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, Events},
+    testutils::{Address as _, Events, Ledger, LedgerInfo},
     token::StellarAssetClient,
     vec, Env, IntoVal, String
 };
@@ -32,7 +32,7 @@ fn init_contract_with_admin<'a>() -> (Env, SubscriptionContractClient<'a>, Confi
     env.mock_all_auths();
 
     //set admin
-    client.init(&init_data);
+    client.config(&init_data);
 
     (env, client, init_data)
 }
@@ -99,6 +99,21 @@ fn test() {
     );
     assert_eq!(vec![&env, env.events().all().last().unwrap()], vec![&env, event]);
 
-    let subs = client.get_subscription(&subscription_id);
+    let mut subs = client.get_subscription(&subscription_id);
     assert_eq!(subs.balance, 200);
+
+    let ledger_info = env.ledger().get();
+    env.ledger().set(LedgerInfo {
+        timestamp: 86400 * 2,
+        ..ledger_info
+    });
+
+    // charge subscription
+    client.charge(&vec![&env, 1u64]);
+
+    // check balance and status
+    subs = client.get_subscription(&subscription_id);
+    assert_eq!(subs.balance, 0);
+    assert_eq!(subs.is_active, false);
+    assert_eq!(subs.last_change, 86400 * 2);
 }

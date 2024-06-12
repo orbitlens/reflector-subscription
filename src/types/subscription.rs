@@ -22,5 +22,9 @@ pub struct Subscription {
     // The webhook.
     pub webhook: String,
     // Balance
-    pub balance: u64
+    pub balance: u64,
+    // The subscription status.
+    pub is_active: bool,
+    // The last change timestamp.
+    pub last_change: u64
 }
