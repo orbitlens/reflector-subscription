@@ -40,7 +40,7 @@ impl SubscriptionContract {
         }
 
         e.set_admin(&config.admin);
-        e.set_base_fee(config.fee);
+        e.set_fee(config.fee);
         e.set_token(&config.token);
         e.set_last_subscription_id(0);
     }
@@ -56,7 +56,7 @@ impl SubscriptionContract {
     // Panics if the caller doesn't match admin address
     pub fn set_fee(e: Env, fee: u64) {
         e.panic_if_not_admin();
-        e.set_base_fee(fee);
+        e.set_fee(fee);
     }
 
     // Triggers the subscription. Can be invoked only by the admin account.
@@ -114,7 +114,7 @@ impl SubscriptionContract {
         e.panic_if_not_admin();
         let mut total_charge: u64 = 0;
         let now = e.ledger().timestamp();
-        let fee = e.get_base_fee();
+        let fee = e.get_fee();
         for subscription_id in subscription_ids.iter() {
             if let Some(mut subscription) = e.get_subscription(subscription_id) {
                 let days = (now - subscription.last_change) / DAY;
@@ -172,14 +172,12 @@ impl SubscriptionContract {
         new_subscription: CreateSubscription,
         amount: u64,
     ) -> u64 {
-        if !e.is_initialized() {
-            e.panic_with_error(Error::NotInitialized);
-        }
+        panin_if_not_initialized(&e);
         // Check the authorization
         new_subscription.owner.require_auth();
 
         // Check the amount
-        let fee = e.get_base_fee();
+        let fee = e.get_fee();
         if amount < fee * MIN_FEE_FACTOR {
             e.panic_with_error(Error::InvalidAmount);
         }
@@ -227,15 +225,13 @@ impl SubscriptionContract {
     // Panics if the subscription does not exist
     // Panics if the token transfer fails
     pub fn deposit(e: Env, from: Address, subscription_id: u64, amount: u64) {
-        if !e.is_initialized() {
-            e.panic_with_error(Error::NotInitialized);
-        }
+        panin_if_not_initialized(&e);
         from.require_auth();
         if amount == 0 {
             e.panic_with_error(Error::InvalidAmount);
         }
         let mut subscription = e.get_subscription(subscription_id).unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound));
-        if !subscription.is_active && amount < e.get_base_fee() * MIN_FEE_FACTOR {
+        if !subscription.is_active && amount < e.get_fee() * MIN_FEE_FACTOR {
             e.panic_with_error(Error::InvalidAmount);
         }
         get_token_client(&e).transfer(
@@ -262,9 +258,7 @@ impl SubscriptionContract {
     //
     // Panics if the contract is not initialized
     pub fn get_subscription(e: Env, subscription_id: u64) -> Subscription {
-        if !e.is_initialized() {
-            e.panic_with_error(Error::NotInitialized);
-        }
+        panin_if_not_initialized(&e);
         e.get_subscription(subscription_id).unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound))
     }
 
@@ -296,11 +290,9 @@ impl SubscriptionContract {
     // # Returns
     //
     // Base fee
-    pub fn base_fee(e: Env) -> u64 {
-        if e.is_initialized() {
-            e.panic_with_error(Error::NotInitialized);
-        }
-        e.get_base_fee()
+    pub fn fee(e: Env) -> u64 {
+        panin_if_not_initialized(&e);
+        e.get_fee()
     }
 
     // Returns the token address of the contract.
@@ -309,10 +301,14 @@ impl SubscriptionContract {
     //
     // Token address
     pub fn token(e: Env) -> Address {
-        if e.is_initialized() {
-            e.panic_with_error(Error::NotInitialized);
-        }
+        panin_if_not_initialized(&e);
         e.get_token()
+    }
+}
+
+fn panin_if_not_initialized(e: &Env) {
+    if !e.is_initialized() {
+        panic_with_error!(e, Error::NotInitialized);
     }
 }
 

@@ -15,9 +15,9 @@ pub trait EnvExtensions {
 
     fn set_admin(&self, admin: &Address);
 
-    fn get_base_fee(&self) -> u64;
+    fn get_fee(&self) -> u64;
 
-    fn set_base_fee(&self, base_fee: u64);
+    fn set_fee(&self, base_fee: u64);
 
     fn get_token(&self) -> Address;
 
@@ -49,11 +49,11 @@ impl EnvExtensions for Env {
         get_instance_storage(&self).set(&ADMIN_KEY, admin);
     }
 
-    fn get_base_fee(&self) -> u64 {
+    fn get_fee(&self) -> u64 {
         get_instance_storage(&self).get(&BASE_FEE).unwrap_or(0)
     }
 
-    fn set_base_fee(&self, base_fee: u64) {
+    fn set_fee(&self, base_fee: u64) {
         get_instance_storage(&self).set(&BASE_FEE, &base_fee);
     }
 
@@ -97,9 +97,5 @@ fn get_instance_storage(e: &Env) -> Instance {
 }
 
 fn get_persistent_storage(e: &Env) -> Temporary {
-    e.storage().temporary()
-}
-
-fn get_temporary_storage(e: &Env) -> Temporary {
     e.storage().temporary()
 }
