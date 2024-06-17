@@ -5,8 +5,8 @@ mod types;
 
 use extensions::env_extensions::EnvExtensions;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, token::{self, TokenClient}, Address, BytesN, Env, Symbol, Vec};
-use types::{config_data::ConfigData, create_subscription::CreateSubscription, error::Error, subscription::{self, Subscription}};
+    contract, contractimpl, panic_with_error, symbol_short, token::{TokenClient}, Address, BytesN, Env, Symbol, Vec};
+use types::{config_data::ConfigData, create_subscription::CreateSubscription, error::Error, subscription::{Subscription}};
 
 const SUBS: Symbol = symbol_short!("SUBS");
 
@@ -117,7 +117,7 @@ impl SubscriptionContract {
         let fee = e.get_fee();
         for subscription_id in subscription_ids.iter() {
             if let Some(mut subscription) = e.get_subscription(subscription_id) {
-                let days = (now - subscription.last_change) / DAY;
+                let days = (now - subscription.last_charge) / DAY;
                 if days == 0 {
                     continue;
                 }
@@ -126,7 +126,7 @@ impl SubscriptionContract {
                     charge = subscription.balance;
                 }
                 subscription.balance -= charge;
-                subscription.last_change = now;
+                subscription.last_charge = now;
                 if subscription.balance < fee { // Deactivate the subscription if the balance is less than the fee
                     subscription.is_active = false;
                 }
@@ -134,6 +134,10 @@ impl SubscriptionContract {
                 
                 total_charge += charge;
             }
+        }
+        // If there is nothing to charge, return
+        if total_charge == 0 {
+            return;
         }
         //Publish the events
         e.events().publish((SUBS, symbol_short!("charged")), subscription_ids);
@@ -200,7 +204,7 @@ impl SubscriptionContract {
             webhook: new_subscription.webhook,
             balance: amount,
             is_active: true,
-            last_change: e.ledger().timestamp(),
+            last_charge: e.ledger().timestamp(),
             last_notification: 0
         };
         e.set_subscription(subscription_id, &subscription);

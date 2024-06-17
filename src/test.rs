@@ -115,5 +115,5 @@ fn test() {
     subs = client.get_subscription(&subscription_id);
     assert_eq!(subs.balance, 0);
     assert_eq!(subs.is_active, false);
-    assert_eq!(subs.last_change, 86400 * 2);
+    assert_eq!(subs.last_charge, 86400 * 2);
 }

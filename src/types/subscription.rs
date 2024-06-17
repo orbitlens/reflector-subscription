@@ -26,5 +26,5 @@ pub struct Subscription {
     // The subscription status.
     pub is_active: bool,
     // The last change timestamp.
-    pub last_change: u64
+    pub last_charge: u64
 }

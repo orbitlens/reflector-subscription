@@ -1,5 +1,5 @@
 #![allow(non_upper_case_globals)]
-use soroban_sdk::storage::{Instance, Temporary};
+use soroban_sdk::storage::{Instance, Persistent};
 use soroban_sdk::{panic_with_error, Address, Env};
 
 use crate::types;
@@ -96,6 +96,6 @@ fn get_instance_storage(e: &Env) -> Instance {
     e.storage().instance()
 }
 
-fn get_persistent_storage(e: &Env) -> Temporary {
-    e.storage().temporary()
+fn get_persistent_storage(e: &Env) -> Persistent {
+    e.storage().persistent()
 }
