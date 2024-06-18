@@ -62,7 +62,7 @@ fn test() {
     };
 
     // create subscription
-    let subscription_id = client.create_subscription(&subscription, &100);
+    let subscription_id = client.create_subscription(&subscription, &200);
     assert!(subscription_id == 1);
     
     let mut event = (

@@ -5,8 +5,14 @@ mod types;
 
 use extensions::env_extensions::EnvExtensions;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, token::{TokenClient}, Address, BytesN, Env, Symbol, Vec};
-use types::{config_data::ConfigData, create_subscription::CreateSubscription, error::Error, subscription::{Subscription}};
+    contract, contractimpl, panic_with_error, symbol_short,
+    token::TokenClient,
+    Address, BytesN, Env, Symbol, Vec,
+};
+use types::{
+    config_data::ConfigData, create_subscription::CreateSubscription, error::Error,
+    subscription::Subscription,
+};
 
 const SUBS: Symbol = symbol_short!("SUBS");
 
@@ -21,7 +27,6 @@ pub struct SubscriptionContract;
 
 #[contractimpl]
 impl SubscriptionContract {
-
     // Admin only
 
     // Initializes the contract. Can be invoked only once.
@@ -71,13 +76,13 @@ impl SubscriptionContract {
     // Panics if the caller doesn't match admin address
     pub fn trigger(e: Env, subscription_ids: Vec<u64>, is_heartbeat: bool) {
         e.panic_if_not_admin();
-        let now = e.ledger().timestamp();
-        for subscription_id in subscription_ids.iter() {
-            if let Some(mut subscription) = e.get_subscription(subscription_id) {
-                subscription.last_notification = now;
-                e.set_subscription(subscription_id, &subscription);
-            }
-        }
+        // let now = e.ledger().timestamp();
+        // for subscription_id in subscription_ids.iter() {
+        //     if let Some(mut subscription) = e.get_subscription(subscription_id) {
+        //         subscription.last_notification = now;
+        //         e.set_subscription(subscription_id, &subscription);
+        //     }
+        // }
         let event = if is_heartbeat {
             symbol_short!("heartbeat")
         } else {
@@ -127,11 +132,12 @@ impl SubscriptionContract {
                 }
                 subscription.balance -= charge;
                 subscription.last_charge = now;
-                if subscription.balance < fee { // Deactivate the subscription if the balance is less than the fee
+                if subscription.balance < fee {
+                    // Deactivate the subscription if the balance is less than the fee
                     subscription.is_active = false;
                 }
                 e.set_subscription(subscription_id, &subscription);
-                
+
                 total_charge += charge;
             }
         }
@@ -140,16 +146,12 @@ impl SubscriptionContract {
             return;
         }
         //Publish the events
-        e.events().publish((SUBS, symbol_short!("charged")), subscription_ids);
+        e.events()
+            .publish((SUBS, symbol_short!("charged")), subscription_ids);
 
         //Burn the tokens
-        get_token_client(&e).burn(
-            &e.current_contract_address(),
-            &(total_charge as i128),
-        );
+        get_token_client(&e).burn(&e.current_contract_address(), &(total_charge as i128));
     }
-
-    
 
     // Public
 
@@ -171,27 +173,19 @@ impl SubscriptionContract {
     // Panics if the caller doesn't match the owner address
     // Panics if the token transfer fails
     // Panics if the subscription is invalid
-    pub fn create_subscription(
-        e: Env,
-        new_subscription: CreateSubscription,
-        amount: u64,
-    ) -> u64 {
+    pub fn create_subscription(e: Env, new_subscription: CreateSubscription, amount: u64) -> u64 {
         panin_if_not_initialized(&e);
         // Check the authorization
         new_subscription.owner.require_auth();
 
         // Check the amount
-        let fee = e.get_fee();
-        if amount < fee * MIN_FEE_FACTOR {
+        let activation_fee = get_activation_fee(&e);
+        if amount < activation_fee {
             e.panic_with_error(Error::InvalidAmount);
         }
 
-        // Transfer the tokens to the contract
-        get_token_client(&e).transfer(
-            &new_subscription.owner,
-            &e.current_contract_address(),
-            &(amount as i128),
-        );
+        // Transfer and burn the tokens
+        transfer_tokens(&e, &new_subscription.owner, amount, Some(activation_fee));
 
         //todo: check if the subscription is valid and the amount is enough
         let subscription_id = e.get_last_subscription_id() + 1;
@@ -202,10 +196,10 @@ impl SubscriptionContract {
             threshold: new_subscription.threshold,
             heartbeat: new_subscription.heartbeat,
             webhook: new_subscription.webhook,
-            balance: amount,
+            balance: amount - activation_fee,
             is_active: true,
             last_charge: e.ledger().timestamp(),
-            last_notification: 0
+            last_notification: 0,
         };
         e.set_subscription(subscription_id, &subscription);
         e.set_last_subscription_id(subscription_id);
@@ -234,18 +228,25 @@ impl SubscriptionContract {
         if amount == 0 {
             e.panic_with_error(Error::InvalidAmount);
         }
-        let mut subscription = e.get_subscription(subscription_id).unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound));
-        if !subscription.is_active && amount < e.get_fee() * MIN_FEE_FACTOR {
-            e.panic_with_error(Error::InvalidAmount);
+        let mut subscription = e
+            .get_subscription(subscription_id)
+            .unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound));
+        let activation_fee = get_activation_fee(&e);
+        let mut burn_amount = 0;
+        // Check if the subscription is active
+        if !subscription.is_active {
+            if amount < activation_fee {
+                e.panic_with_error(Error::InvalidAmount);
+            }
+            // Set the activation fee as the burn amount
+            burn_amount = activation_fee;
         }
-        get_token_client(&e).transfer(
-            &from,
-            &e.current_contract_address(),
-            &(amount as i128)
-        );
-        subscription.balance += amount;
+        // Transfer and burn the tokens
+        transfer_tokens(&e, &from, amount, Some(burn_amount));
+        subscription.balance += amount - burn_amount;
         e.set_subscription(subscription_id, &subscription);
-        e.events().publish((SUBS, symbol_short!("deposit")), (subscription_id, amount));
+        e.events()
+            .publish((SUBS, symbol_short!("deposit")), (subscription_id, amount));
     }
 
     // Gets the subscription by ID.
@@ -263,7 +264,8 @@ impl SubscriptionContract {
     // Panics if the contract is not initialized
     pub fn get_subscription(e: Env, subscription_id: u64) -> Subscription {
         panin_if_not_initialized(&e);
-        e.get_subscription(subscription_id).unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound))
+        e.get_subscription(subscription_id)
+            .unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound))
     }
 
     // Returns admin address of the contract.
@@ -290,7 +292,7 @@ impl SubscriptionContract {
     }
 
     // Returns the base fee of the contract.
-    // 
+    //
     // # Returns
     //
     // Base fee
@@ -318,6 +320,18 @@ fn panin_if_not_initialized(e: &Env) {
 
 fn get_token_client(e: &Env) -> TokenClient {
     TokenClient::new(e, &e.get_token())
+}
+
+fn get_activation_fee(e: &Env) -> u64 {
+    e.get_fee() * MIN_FEE_FACTOR
+}
+
+fn transfer_tokens(e: &Env, from: &Address, amount: u64, burn_amount: Option<u64>) {
+    let token_client = get_token_client(e);
+    token_client.transfer(from, &e.current_contract_address(), &(amount as i128));
+    if let Some(burn_amount) = burn_amount {
+        token_client.burn(&e.current_contract_address(), &(burn_amount as i128));
+    }
 }
 
 mod test;
