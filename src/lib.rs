@@ -5,9 +5,8 @@ mod types;
 
 use extensions::env_extensions::EnvExtensions;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short,
-    token::TokenClient,
-    Address, BytesN, Env, Symbol, Vec,
+    contract, contractimpl, panic_with_error, symbol_short, token::TokenClient, Address, BytesN,
+    Env, Symbol, Vec,
 };
 use types::{
     config_data::ConfigData, create_subscription::CreateSubscription, error::Error,
@@ -16,8 +15,8 @@ use types::{
 
 const SUBS: Symbol = symbol_short!("SUBS");
 
-// 1 day in seconds
-const DAY: u64 = 86400;
+// 1 day in milliseconds
+const DAY: u64 = 86400 * 1000;
 
 // Minimum fee factor for the activation
 const MIN_FEE_FACTOR: u64 = 1;
@@ -68,27 +67,25 @@ impl SubscriptionContract {
     //
     // # Arguments
     //
-    // * `subscription_ids` - Subscription IDs to trigger
-    // * `is_heartbeat` - If true, the trigger is a heartbeat
+    // * `timestamp` - Timestamp of the trigger
+    // * `heartbeat_ids` - Subscription IDs to trigger the heartbeat
+    // * `trigger_ids` - Subscription IDs to trigger the trigger
     //
     // # Panics
     //
     // Panics if the caller doesn't match admin address
-    pub fn trigger(e: Env, subscription_ids: Vec<u64>, is_heartbeat: bool) {
+    pub fn trigger(e: Env, timestamp: u64, heartbeat_ids: Vec<u64>, trigger_ids: Vec<u64>) {
         e.panic_if_not_admin();
-        // let now = e.ledger().timestamp();
-        // for subscription_id in subscription_ids.iter() {
-        //     if let Some(mut subscription) = e.get_subscription(subscription_id) {
-        //         subscription.last_notification = now;
-        //         e.set_subscription(subscription_id, &subscription);
-        //     }
-        // }
-        let event = if is_heartbeat {
-            symbol_short!("heartbeat")
-        } else {
-            symbol_short!("triggered")
-        };
-        e.events().publish((SUBS, event), subscription_ids)
+        if !heartbeat_ids.is_empty() {
+            e.events().publish(
+                (SUBS, symbol_short!("heartbeat")),
+                (timestamp, heartbeat_ids),
+            );
+        }
+        if !trigger_ids.is_empty() {
+            e.events()
+                .publish((SUBS, symbol_short!("triggered")), (timestamp, trigger_ids));
+        }
     }
 
     // Updates the contract source code. Can be invoked only by the admin account.
@@ -118,8 +115,9 @@ impl SubscriptionContract {
     pub fn charge(e: Env, subscription_ids: Vec<u64>) {
         e.panic_if_not_admin();
         let mut total_charge: u64 = 0;
-        let now = e.ledger().timestamp();
+        let now = now(&e);
         let fee = e.get_fee();
+        let mut diactivated_subscriptions = Vec::new(&e);
         for subscription_id in subscription_ids.iter() {
             if let Some(mut subscription) = e.get_subscription(subscription_id) {
                 let days = (now - subscription.last_charge) / DAY;
@@ -135,6 +133,7 @@ impl SubscriptionContract {
                 if subscription.balance < fee {
                     // Deactivate the subscription if the balance is less than the fee
                     subscription.is_active = false;
+                    diactivated_subscriptions.push_back(subscription_id);
                 }
                 e.set_subscription(subscription_id, &subscription);
 
@@ -147,7 +146,12 @@ impl SubscriptionContract {
         }
         //Publish the events
         e.events()
-            .publish((SUBS, symbol_short!("charged")), subscription_ids);
+            .publish((SUBS, symbol_short!("charged")), (now, subscription_ids));
+
+        e.events().publish(
+            (SUBS, symbol_short!("suspended")),
+            diactivated_subscriptions,
+        );
 
         //Burn the tokens
         get_token_client(&e).burn(&e.current_contract_address(), &(total_charge as i128));
@@ -173,7 +177,7 @@ impl SubscriptionContract {
     // Panics if the caller doesn't match the owner address
     // Panics if the token transfer fails
     // Panics if the subscription is invalid
-    pub fn create_subscription(e: Env, new_subscription: CreateSubscription, amount: u64) -> u64 {
+    pub fn create_subscription(e: Env, new_subscription: CreateSubscription, amount: u64) -> (u64, Subscription) {
         panin_if_not_initialized(&e);
         // Check the authorization
         new_subscription.owner.require_auth();
@@ -198,14 +202,14 @@ impl SubscriptionContract {
             webhook: new_subscription.webhook,
             balance: amount - activation_fee,
             is_active: true,
-            last_charge: e.ledger().timestamp(),
-            last_notification: 0,
+            last_charge: now(&e), // normalize to milliseconds
         };
         e.set_subscription(subscription_id, &subscription);
         e.set_last_subscription_id(subscription_id);
+        let data = (subscription_id, subscription);
         e.events()
-            .publish((SUBS, symbol_short!("created")), subscription_id);
-        return subscription_id;
+            .publish((SUBS, symbol_short!("created")), data.clone());
+        return data;
     }
 
     // Deposits funds to the subscription.
@@ -332,6 +336,10 @@ fn transfer_tokens(e: &Env, from: &Address, amount: u64, burn_amount: Option<u64
     if let Some(burn_amount) = burn_amount {
         token_client.burn(&e.current_contract_address(), &(burn_amount as i128));
     }
+}
+
+fn now(e: &Env) -> u64 {
+    e.ledger().timestamp() * 1000 // normalize to milliseconds
 }
 
 mod test;

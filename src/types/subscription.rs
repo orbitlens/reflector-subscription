@@ -17,8 +17,6 @@ pub struct Subscription {
     pub threshold: u32,
     // The heartbeat in minutes.
     pub heartbeat: u32,
-    // The last heartbeat.
-    pub last_notification: u64,
     // The webhook.
     pub webhook: String,
     // Balance

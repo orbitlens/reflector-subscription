@@ -62,33 +62,38 @@ fn test() {
     };
 
     // create subscription
-    let subscription_id = client.create_subscription(&subscription, &200);
+    let (subscription_id, data) = client.create_subscription(&subscription, &200);
     assert!(subscription_id == 1);
     
     let mut event = (
         client.address.clone(),
         (symbol_short!("SUBS"), symbol_short!("created")).into_val(&env),
-        1u64.into_val(&env),
+        (1u64, data).into_val(&env),
     );
     assert_eq!(vec![&env, env.events().all().last().unwrap()], vec![&env, event]);
 
     // heartbeat subscription
-    client.trigger(&vec![&env, 1], &true);
+    client.trigger(&1u64,&vec![&env, 1], &vec![&env, 1]);
     event = (
         client.address.clone(),
         (symbol_short!("SUBS"), symbol_short!("heartbeat")).into_val(&env),
-        vec![&env, 1u64].into_val(&env),
+        (1u64, vec![&env, 1u64]).into_val(&env),
     );
-    assert_eq!(vec![&env, env.events().all().last().unwrap()], vec![&env, event]);
+    
+    let events = env.events().all();
 
-    // trigger subscription
-    client.trigger(&vec![&env, 1], &false);
+    let heartbeat_event = vec![&env, events.get(events.len() - 2).unwrap()];
+
+    assert_eq!(heartbeat_event, vec![&env, event]);
+
+    let trigger_event = vec![&env, env.events().all().last().unwrap()];
+
     event = (
         client.address.clone(),
         (symbol_short!("SUBS"), symbol_short!("triggered")).into_val(&env),
-        vec![&env, 1u64].into_val(&env),
+        (1u64, vec![&env, 1u64]).into_val(&env),
     );
-    assert_eq!(vec![&env, env.events().all().last().unwrap()], vec![&env, event]);
+    assert_eq!(trigger_event, vec![&env, event]);
 
     // deposit subscription
     client.deposit(&owner, &1, &100);
@@ -115,5 +120,5 @@ fn test() {
     subs = client.get_subscription(&subscription_id);
     assert_eq!(subs.balance, 0);
     assert_eq!(subs.is_active, false);
-    assert_eq!(subs.last_charge, 86400 * 2);
+    assert_eq!(subs.last_charge, 86400 * 2 * 1000);
 }
