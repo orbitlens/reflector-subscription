@@ -789,7 +789,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "reflector-subscription"
+name = "reflector-subscriptions"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
