@@ -14,4 +14,8 @@ pub enum Error {
     NotInitialized = 3,
     // The amount is invalid.
     InvalidAmount = 4,
+    // The heartbeat is invalid.
+    InvalidHeartbeat = 5,
+    // The threshold is invalid.
+    InvalidThreshold = 6,
 }

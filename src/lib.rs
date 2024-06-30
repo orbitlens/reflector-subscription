@@ -21,6 +21,9 @@ const DAY: u64 = 86400 * 1000;
 // Minimum fee factor for the activation
 const MIN_FEE_FACTOR: u64 = 1;
 
+// Minimum heartbeat in minutes
+const MIN_HEARTBEAT: u32 = 5;
+
 #[contract]
 pub struct SubscriptionContract;
 
@@ -117,7 +120,7 @@ impl SubscriptionContract {
         let mut total_charge: u64 = 0;
         let now = now(&e);
         let fee = e.get_fee();
-        let mut diactivated_subscriptions = Vec::new(&e);
+        let mut deactivated_subscriptions = Vec::new(&e);
         for subscription_id in subscription_ids.iter() {
             if let Some(mut subscription) = e.get_subscription(subscription_id) {
                 let days = (now - subscription.last_charge) / DAY;
@@ -133,7 +136,7 @@ impl SubscriptionContract {
                 if subscription.balance < fee {
                     // Deactivate the subscription if the balance is less than the fee
                     subscription.is_active = false;
-                    diactivated_subscriptions.push_back(subscription_id);
+                    deactivated_subscriptions.push_back(subscription_id);
                 }
                 e.set_subscription(subscription_id, &subscription);
 
@@ -148,10 +151,12 @@ impl SubscriptionContract {
         e.events()
             .publish((SUBS, symbol_short!("charged")), (now, subscription_ids));
 
-        e.events().publish(
-            (SUBS, symbol_short!("suspended")),
-            diactivated_subscriptions,
-        );
+        if !deactivated_subscriptions.is_empty() {
+            e.events().publish(
+                (SUBS, symbol_short!("suspended")),
+                deactivated_subscriptions,
+            );
+        }
 
         //Burn the tokens
         get_token_client(&e).burn(&e.current_contract_address(), &(total_charge as i128));
@@ -186,6 +191,14 @@ impl SubscriptionContract {
         let activation_fee = get_activation_fee(&e);
         if amount < activation_fee {
             e.panic_with_error(Error::InvalidAmount);
+        }
+
+        if MIN_HEARTBEAT > new_subscription.heartbeat {
+            e.panic_with_error(Error::InvalidHeartbeat);
+        }
+
+        if new_subscription.threshold == 0 {
+            e.panic_with_error(Error::InvalidThreshold);
         }
 
         // Transfer and burn the tokens
