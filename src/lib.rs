@@ -18,6 +18,8 @@ const SUBS: Symbol = symbol_short!("SUBS");
 // 1 day in milliseconds
 const DAY: u64 = 86400 * 1000;
 
+const MAX_WEBHOOK_SIZE: u32 = 2048;
+
 // Minimum fee factor for the activation
 const MIN_FEE_FACTOR: u64 = 1;
 
@@ -199,6 +201,10 @@ impl SubscriptionContract {
 
         if new_subscription.threshold == 0 {
             e.panic_with_error(Error::InvalidThreshold);
+        }
+
+        if new_subscription.webhook.len() > MAX_WEBHOOK_SIZE {
+            e.panic_with_error(Error::WebhookTooLong);
         }
 
         // Transfer and burn the tokens

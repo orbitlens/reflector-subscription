@@ -2,10 +2,7 @@
 
 use super::*;
 use soroban_sdk::{
-    symbol_short,
-    testutils::{Address as _, Events, Ledger, LedgerInfo},
-    token::StellarAssetClient,
-    vec, Env, IntoVal, String
+    symbol_short, testutils::{Address as _, Events, Ledger, LedgerInfo}, token::StellarAssetClient, vec, Bytes, Env, IntoVal, String
 };
 use types::{
     asset::Asset, config_data::ConfigData, create_subscription::CreateSubscription,
@@ -58,7 +55,7 @@ fn test() {
         },
         threshold: 10,
         heartbeat: 5,
-        webhook: String::from_str(&env, "webhook"),
+        webhook: Bytes::from_array(&env, &[0; 2048]),
     };
 
     // create subscription

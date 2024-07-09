@@ -18,4 +18,6 @@ pub enum Error {
     InvalidHeartbeat = 5,
     // The threshold is invalid.
     InvalidThreshold = 6,
+    // The webhook is too long.
+    WebhookTooLong = 7,
 }

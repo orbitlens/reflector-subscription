@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, String};
+use soroban_sdk::{contracttype, Address, Bytes};
 
 use super::ticker_asset::TickerAsset;
 
@@ -18,5 +18,5 @@ pub struct CreateSubscription {
     // The heartbeat in minutes.
     pub heartbeat: u32,
     // The webhook.
-    pub webhook: String,
+    pub webhook: Bytes,
 }
