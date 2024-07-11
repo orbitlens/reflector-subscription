@@ -61,35 +61,27 @@ fn test() {
     // create subscription
     let (subscription_id, data) = client.create_subscription(&subscription, &200);
     assert!(subscription_id == 1);
-    
+
     let mut event = (
         client.address.clone(),
         (symbol_short!("SUBS"), symbol_short!("created")).into_val(&env),
         (1u64, data).into_val(&env),
     );
-    assert_eq!(vec![&env, env.events().all().last().unwrap()], vec![&env, event]);
+    assert_eq!(
+        vec![&env, env.events().all().last().unwrap()],
+        vec![&env, event]
+    );
 
+    let trigger_hash: BytesN<32> = BytesN::from_array(&env, &[0; 32]);
     // heartbeat subscription
-    client.trigger(&1u64,&vec![&env, 1], &vec![&env, 1]);
+    client.trigger(&1u64, &trigger_hash);
     event = (
         client.address.clone(),
-        (symbol_short!("SUBS"), symbol_short!("heartbeat")).into_val(&env),
-        (1u64, vec![&env, 1u64]).into_val(&env),
+        (symbol_short!("SUBS"), symbol_short!("trigger")).into_val(&env),
+        (1u64, trigger_hash).into_val(&env),
     );
-    
-    let events = env.events().all();
-
-    let heartbeat_event = vec![&env, events.get(events.len() - 2).unwrap()];
-
-    assert_eq!(heartbeat_event, vec![&env, event]);
 
     let trigger_event = vec![&env, env.events().all().last().unwrap()];
-
-    event = (
-        client.address.clone(),
-        (symbol_short!("SUBS"), symbol_short!("triggered")).into_val(&env),
-        (1u64, vec![&env, 1u64]).into_val(&env),
-    );
     assert_eq!(trigger_event, vec![&env, event]);
 
     // deposit subscription
@@ -99,7 +91,10 @@ fn test() {
         (symbol_short!("SUBS"), symbol_short!("deposit")).into_val(&env),
         (1u64, 100u64).into_val(&env),
     );
-    assert_eq!(vec![&env, env.events().all().last().unwrap()], vec![&env, event]);
+    assert_eq!(
+        vec![&env, env.events().all().last().unwrap()],
+        vec![&env, event]
+    );
 
     let mut subs = client.get_subscription(&subscription_id);
     assert_eq!(subs.balance, 200);
@@ -116,6 +111,17 @@ fn test() {
     // check balance and status
     subs = client.get_subscription(&subscription_id);
     assert_eq!(subs.balance, 0);
-    assert_eq!(subs.is_active, false);
+    assert_eq!(subs.status, SubscriptionStatus::Suspended);
     assert_eq!(subs.last_charge, 86400 * 2 * 1000);
+
+    // deposit subscription to renew
+    client.deposit(&owner, &1, &200);
+    subs = client.get_subscription(&subscription_id);
+    assert_eq!(subs.balance, 100); // 100 is activation fee
+    assert_eq!(subs.status, SubscriptionStatus::Active);
+
+    // cancel subscription
+    client.cancel(&1u64);
+    subs = client.get_subscription(&subscription_id);
+    assert_eq!(subs.status, SubscriptionStatus::Cancelled);
 }

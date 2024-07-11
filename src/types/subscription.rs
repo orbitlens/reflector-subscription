@@ -1,6 +1,6 @@
 use soroban_sdk::{contracttype, Address, Bytes};
 
-use super::ticker_asset::TickerAsset;
+use super::{subscription_status::SubscriptionStatus, ticker_asset::TickerAsset};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -22,7 +22,7 @@ pub struct Subscription {
     // Balance
     pub balance: u64,
     // The subscription status.
-    pub is_active: bool,
+    pub status: SubscriptionStatus,
     // The last change timestamp.
     pub last_charge: u64
 }

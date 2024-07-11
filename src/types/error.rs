@@ -20,4 +20,6 @@ pub enum Error {
     InvalidThreshold = 6,
     // The webhook is too long.
     WebhookTooLong = 7,
+    // The subscription status is not valid for the operation.
+    InvalidSubscriptionStatusError = 8
 }
