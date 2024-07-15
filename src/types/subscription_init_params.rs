@@ -6,13 +6,13 @@ use super::ticker_asset::TickerAsset;
 #[derive(Clone, Debug, Eq, PartialEq)]
 
 // The configuration parameters for the contract.
-pub struct CreateSubscription {
+pub struct SubscriptionInitParams {
     // The owner address.
     pub owner: Address,
-    // The asset 1.
-    pub asset1: TickerAsset,
-    // The asset 2.
-    pub asset2: TickerAsset,
+    // Base ticker asset.
+    pub base: TickerAsset,
+    // Quote ticker asset.
+    pub quote: TickerAsset,
     // The threshold in percentage.
     pub threshold: u32,
     // The heartbeat in minutes.

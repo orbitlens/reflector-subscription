@@ -9,10 +9,10 @@ use super::{subscription_status::SubscriptionStatus, ticker_asset::TickerAsset};
 pub struct Subscription {
     // The owner address.
     pub owner: Address,
-    // The asset 1.
-    pub asset1: TickerAsset,
-    // The asset 2.
-    pub asset2: TickerAsset,
+    // Base ticker asset.
+    pub base: TickerAsset,
+    // Quote ticker asset.
+    pub quote: TickerAsset,
     // The threshold in percentage.
     pub threshold: u32,
     // The heartbeat in minutes.
@@ -24,5 +24,5 @@ pub struct Subscription {
     // The subscription status.
     pub status: SubscriptionStatus,
     // The last change timestamp.
-    pub last_charge: u64
+    pub updated: u64
 }

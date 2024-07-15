@@ -9,11 +9,11 @@ use soroban_sdk::{
     Env, Symbol, Vec,
 };
 use types::{
-    config_data::ConfigData, create_subscription::CreateSubscription, error::Error,
-    subscription::Subscription, subscription_status::SubscriptionStatus,
+    contract_config::ContractConfig, error::Error, subscription::Subscription,
+    subscription_init_params::SubscriptionInitParams, subscription_status::SubscriptionStatus,
 };
 
-const SUBS: Symbol = symbol_short!("SUBS");
+const REFLECTOR: Symbol = symbol_short!("reflector");
 
 // 1 day in milliseconds
 const DAY: u64 = 86400 * 1000;
@@ -42,7 +42,7 @@ impl SubscriptionContract {
     // # Panics
     //
     // Panics if the contract is already initialized
-    pub fn config(e: Env, config: ConfigData) {
+    pub fn config(e: Env, config: ContractConfig) {
         config.admin.require_auth();
         if e.is_initialized() {
             e.panic_with_error(Error::AlreadyInitialized);
@@ -80,8 +80,10 @@ impl SubscriptionContract {
     // Panics if the caller doesn't match admin address
     pub fn trigger(e: Env, timestamp: u64, trigger_hash: BytesN<32>) {
         e.panic_if_not_admin();
-        e.events()
-            .publish((SUBS, symbol_short!("trigger")), (timestamp, trigger_hash));
+        e.events().publish(
+            (REFLECTOR, symbol_short!("activated")),
+            (timestamp, trigger_hash),
+        );
     }
 
     // Updates the contract source code. Can be invoked only by the admin account.
@@ -113,10 +115,10 @@ impl SubscriptionContract {
         let mut total_charge: u64 = 0;
         let now = now(&e);
         let fee = e.get_fee();
-        let mut deactivated_subscriptions = Vec::new(&e);
+        let mut events = Vec::new(&e);
         for subscription_id in subscription_ids.iter() {
             if let Some(mut subscription) = e.get_subscription(subscription_id) {
-                let days = (now - subscription.last_charge) / DAY;
+                let days = (now - subscription.updated) / DAY;
                 if days == 0 {
                     continue;
                 }
@@ -125,13 +127,29 @@ impl SubscriptionContract {
                     charge = subscription.balance;
                 }
                 subscription.balance -= charge;
-                subscription.last_charge = now;
+                subscription.updated = now;
                 if subscription.balance < fee {
                     // Deactivate the subscription if the balance is less than the fee
                     subscription.status = SubscriptionStatus::Suspended;
-                    deactivated_subscriptions.push_back(subscription_id);
+                    events.push_back((
+                        (
+                            REFLECTOR,
+                            symbol_short!("suspended"),
+                            subscription.owner.clone(),
+                        ),
+                        (now, subscription_id),
+                    ));
                 }
                 e.set_subscription(subscription_id, &subscription);
+
+                events.push_back((
+                    (
+                        REFLECTOR,
+                        symbol_short!("charged"),
+                        subscription.owner,
+                    ),
+                    (now, subscription_id),
+                ));
 
                 total_charge += charge;
             }
@@ -140,15 +158,8 @@ impl SubscriptionContract {
         if total_charge == 0 {
             return;
         }
-        //Publish the events
-        e.events()
-            .publish((SUBS, symbol_short!("charged")), (now, subscription_ids));
-
-        if !deactivated_subscriptions.is_empty() {
-            e.events().publish(
-                (SUBS, symbol_short!("suspended")),
-                deactivated_subscriptions,
-            );
+        for (event, data) in events.iter() {
+            e.events().publish(event, data);
         }
 
         //Burn the tokens
@@ -177,15 +188,15 @@ impl SubscriptionContract {
     // Panics if the subscription is invalid
     pub fn create_subscription(
         e: Env,
-        new_subscription: CreateSubscription,
+        new_subscription: SubscriptionInitParams,
         amount: u64,
     ) -> (u64, Subscription) {
-        panin_if_not_initialized(&e);
+        panic_if_not_initialized(&e);
         // Check the authorization
         new_subscription.owner.require_auth();
 
         // Check the amount
-        let activation_fee = get_activation_fee(&e);
+        let activation_fee = e.get_fee() * MIN_FEE_FACTOR;
         if amount < activation_fee {
             e.panic_with_error(Error::InvalidAmount);
         }
@@ -194,7 +205,7 @@ impl SubscriptionContract {
             e.panic_with_error(Error::InvalidHeartbeat);
         }
 
-        if new_subscription.threshold == 0 {
+        if new_subscription.threshold == 0 || new_subscription.threshold > 1000 {
             e.panic_with_error(Error::InvalidThreshold);
         }
 
@@ -209,20 +220,20 @@ impl SubscriptionContract {
         let subscription_id = e.get_last_subscription_id() + 1;
         let subscription = Subscription {
             owner: new_subscription.owner,
-            asset1: new_subscription.asset1,
-            asset2: new_subscription.asset2,
+            base: new_subscription.base,
+            quote: new_subscription.quote,
             threshold: new_subscription.threshold,
             heartbeat: new_subscription.heartbeat,
             webhook: new_subscription.webhook,
             balance: amount - activation_fee,
             status: SubscriptionStatus::Active,
-            last_charge: now(&e), // normalize to milliseconds
+            updated: now(&e), // normalize to milliseconds
         };
         e.set_subscription(subscription_id, &subscription);
         e.set_last_subscription_id(subscription_id);
-        let data = (subscription_id, subscription);
+        let data = (subscription_id, subscription.clone());
         e.events()
-            .publish((SUBS, symbol_short!("created")), data.clone());
+            .publish((REFLECTOR, symbol_short!("created"), subscription.owner), data.clone());
         return data;
     }
 
@@ -241,7 +252,7 @@ impl SubscriptionContract {
     // Panics if the subscription does not exist
     // Panics if the token transfer fails
     pub fn deposit(e: Env, from: Address, subscription_id: u64, amount: u64) {
-        panin_if_not_initialized(&e);
+        panic_if_not_initialized(&e);
         from.require_auth();
         if amount == 0 {
             e.panic_with_error(Error::InvalidAmount);
@@ -249,17 +260,16 @@ impl SubscriptionContract {
         let mut subscription = e
             .get_subscription(subscription_id)
             .unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound));
-        let activation_fee = get_activation_fee(&e);
         let mut burn_amount = 0;
-
+        let fee = e.get_fee();
         match subscription.status {
             SubscriptionStatus::Suspended => {
                 // Check if the subscription is suspended
-                if amount < activation_fee {
+                if amount < fee {
                     e.panic_with_error(Error::InvalidAmount);
                 }
                 // Set the activation fee as the burn amount
-                burn_amount = activation_fee;
+                burn_amount = fee;
                 subscription.status = SubscriptionStatus::Active;
             }
             SubscriptionStatus::Cancelled => {
@@ -273,8 +283,10 @@ impl SubscriptionContract {
 
         subscription.balance += amount - burn_amount;
         e.set_subscription(subscription_id, &subscription);
-        e.events()
-            .publish((SUBS, symbol_short!("deposit")), (subscription_id, amount));
+        e.events().publish(
+            (REFLECTOR, symbol_short!("deposited"), subscription.owner.clone()),
+            (subscription_id, subscription, amount),
+        );
     }
 
     // Withdraws funds from the subscription and deactivates it.
@@ -288,7 +300,7 @@ impl SubscriptionContract {
     // # Panics if the subscription is not active
     // # Panics if the token transfer fails
     pub fn cancel(e: Env, subscription_id: u64) {
-        panin_if_not_initialized(&e);
+        panic_if_not_initialized(&e);
         let mut subscription = e
             .get_subscription(subscription_id)
             .unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound));
@@ -310,7 +322,7 @@ impl SubscriptionContract {
         subscription.balance = 0;
         e.set_subscription(subscription_id, &subscription);
         e.events()
-            .publish((SUBS, symbol_short!("cancelled")), subscription_id);
+            .publish((REFLECTOR, symbol_short!("cancelled"), subscription.owner), subscription_id);
     }
 
     // Gets the subscription by ID.
@@ -327,7 +339,7 @@ impl SubscriptionContract {
     //
     // Panics if the contract is not initialized
     pub fn get_subscription(e: Env, subscription_id: u64) -> Subscription {
-        panin_if_not_initialized(&e);
+        panic_if_not_initialized(&e);
         e.get_subscription(subscription_id)
             .unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound))
     }
@@ -361,7 +373,7 @@ impl SubscriptionContract {
     //
     // Base fee
     pub fn fee(e: Env) -> u64 {
-        panin_if_not_initialized(&e);
+        panic_if_not_initialized(&e);
         e.get_fee()
     }
 
@@ -371,12 +383,12 @@ impl SubscriptionContract {
     //
     // Token address
     pub fn token(e: Env) -> Address {
-        panin_if_not_initialized(&e);
+        panic_if_not_initialized(&e);
         e.get_token()
     }
 }
 
-fn panin_if_not_initialized(e: &Env) {
+fn panic_if_not_initialized(e: &Env) {
     if !e.is_initialized() {
         panic_with_error!(e, Error::NotInitialized);
     }
@@ -384,10 +396,6 @@ fn panin_if_not_initialized(e: &Env) {
 
 fn get_token_client(e: &Env) -> TokenClient {
     TokenClient::new(e, &e.get_token())
-}
-
-fn get_activation_fee(e: &Env) -> u64 {
-    e.get_fee() * MIN_FEE_FACTOR
 }
 
 fn transfer_tokens_to_current_contract(e: &Env, from: &Address, amount: u64, burn_amount: u64) {

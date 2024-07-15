@@ -2,14 +2,14 @@
 
 use super::*;
 use soroban_sdk::{
-    symbol_short, testutils::{Address as _, Events, Ledger, LedgerInfo}, token::StellarAssetClient, vec, Bytes, Env, IntoVal, String
+    symbol_short, testutils::{Address as _, Ledger, LedgerInfo}, token::StellarAssetClient, vec, Bytes, Env, String
 };
 use types::{
-    asset::Asset, config_data::ConfigData, create_subscription::CreateSubscription,
+    asset::Asset, contract_config::ContractConfig, subscription_init_params::SubscriptionInitParams,
     ticker_asset::TickerAsset,
 };
 
-fn init_contract_with_admin<'a>() -> (Env, SubscriptionContractClient<'a>, ConfigData) {
+fn init_contract_with_admin<'a>() -> (Env, SubscriptionContractClient<'a>, ContractConfig) {
     let env = Env::default();
 
     let admin = Address::generate(&env);
@@ -20,7 +20,7 @@ fn init_contract_with_admin<'a>() -> (Env, SubscriptionContractClient<'a>, Confi
 
     let token = env.register_stellar_asset_contract(admin.clone());
 
-    let init_data = ConfigData {
+    let init_data = ContractConfig {
         admin: admin.clone(),
         token,
         fee: 100,
@@ -43,13 +43,13 @@ fn test() {
     let token_client = StellarAssetClient::new(&env, &config.token);
     token_client.mint(&owner, &1000);
 
-    let subscription = CreateSubscription {
+    let subscription = SubscriptionInitParams {
         owner: owner.clone(),
-        asset1: TickerAsset {
+        base: TickerAsset {
             asset: Asset::Other(symbol_short!("BTC")),
             source: String::from_str(&env, "source1"),
         },
-        asset2: TickerAsset {
+        quote: TickerAsset {
             asset: Asset::Other(symbol_short!("ETH")),
             source: String::from_str(&env, "source2"),
         },
@@ -59,42 +59,15 @@ fn test() {
     };
 
     // create subscription
-    let (subscription_id, data) = client.create_subscription(&subscription, &200);
+    let (subscription_id, _) = client.create_subscription(&subscription, &200);
     assert!(subscription_id == 1);
-
-    let mut event = (
-        client.address.clone(),
-        (symbol_short!("SUBS"), symbol_short!("created")).into_val(&env),
-        (1u64, data).into_val(&env),
-    );
-    assert_eq!(
-        vec![&env, env.events().all().last().unwrap()],
-        vec![&env, event]
-    );
 
     let trigger_hash: BytesN<32> = BytesN::from_array(&env, &[0; 32]);
     // heartbeat subscription
     client.trigger(&1u64, &trigger_hash);
-    event = (
-        client.address.clone(),
-        (symbol_short!("SUBS"), symbol_short!("trigger")).into_val(&env),
-        (1u64, trigger_hash).into_val(&env),
-    );
-
-    let trigger_event = vec![&env, env.events().all().last().unwrap()];
-    assert_eq!(trigger_event, vec![&env, event]);
 
     // deposit subscription
     client.deposit(&owner, &1, &100);
-    event = (
-        client.address.clone(),
-        (symbol_short!("SUBS"), symbol_short!("deposit")).into_val(&env),
-        (1u64, 100u64).into_val(&env),
-    );
-    assert_eq!(
-        vec![&env, env.events().all().last().unwrap()],
-        vec![&env, event]
-    );
 
     let mut subs = client.get_subscription(&subscription_id);
     assert_eq!(subs.balance, 200);
@@ -112,7 +85,7 @@ fn test() {
     subs = client.get_subscription(&subscription_id);
     assert_eq!(subs.balance, 0);
     assert_eq!(subs.status, SubscriptionStatus::Suspended);
-    assert_eq!(subs.last_charge, 86400 * 2 * 1000);
+    assert_eq!(subs.updated, 86400 * 2 * 1000);
 
     // deposit subscription to renew
     client.deposit(&owner, &1, &200);

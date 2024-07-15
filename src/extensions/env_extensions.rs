@@ -7,7 +7,7 @@ use crate::types;
 use types::{error::Error, subscription::Subscription};
 const ADMIN_KEY: &str = "admin";
 const BASE_FEE: &str = "base_fee";
-const LAST_SUBSCRIPTION_ID: &str = "last_subscription_id";
+const LAST_SUBSCRIPTION_ID: &str = "last";
 const TOKEN_KEY: &str = "token";
 
 pub trait EnvExtensions {
