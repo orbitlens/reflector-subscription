@@ -31,6 +31,10 @@ pub trait EnvExtensions {
 
     fn set_subscription(&self, subscription_id: u64, subscription: &Subscription);
 
+    fn remove_subscription(&self, subscription_id: u64);
+
+    fn extend_subscription_ttl(&self, subscription_id: u64, extend_to: u32);
+
     fn panic_if_not_admin(&self);
 
     fn is_initialized(&self) -> bool;
@@ -81,6 +85,14 @@ impl EnvExtensions for Env {
 
     fn set_subscription(&self, subscription_id: u64, subscription: &Subscription) {
         get_persistent_storage(&self).set(&subscription_id, subscription);
+    }
+
+    fn remove_subscription(&self, subscription_id: u64) {
+        get_persistent_storage(&self).remove(&subscription_id);
+    }
+
+    fn extend_subscription_ttl(&self, subscription_id: u64, extend_to: u32) {
+        get_persistent_storage(&self).extend_ttl(&subscription_id, extend_to, extend_to)
     }
 
     fn panic_if_not_admin(&self) {

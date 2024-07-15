@@ -5,8 +5,7 @@ mod types;
 
 use extensions::env_extensions::EnvExtensions;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, token::TokenClient, Address, BytesN,
-    Env, Symbol, Vec,
+    contract, contractimpl, panic_with_error, symbol_short, token::TokenClient, Address, BytesN, Env, Symbol, Vec
 };
 use types::{
     contract_config::ContractConfig, error::Error, subscription::Subscription,
@@ -19,9 +18,6 @@ const REFLECTOR: Symbol = symbol_short!("reflector");
 const DAY: u64 = 86400 * 1000;
 
 const MAX_WEBHOOK_SIZE: u32 = 2048;
-
-// Minimum fee factor for the activation
-const MIN_FEE_FACTOR: u64 = 1;
 
 // Minimum heartbeat in minutes
 const MIN_HEARTBEAT: u32 = 5;
@@ -191,9 +187,11 @@ impl SubscriptionContract {
         // Check the authorization
         new_subscription.owner.require_auth();
 
+        let subscription_fee = calc_fee(&e, &new_subscription.heartbeat, &new_subscription.threshold);
+
         // Check the amount
-        let activation_fee = e.get_fee() * MIN_FEE_FACTOR * 2;
-        if amount < activation_fee {
+        let init_fee = subscription_fee * 2; // init fee is 2 times the subscription fee
+        if amount < init_fee {
             e.panic_with_error(Error::InvalidAmount);
         }
 
@@ -210,7 +208,7 @@ impl SubscriptionContract {
         }
 
         // Transfer and burn the tokens
-        transfer_tokens_to_current_contract(&e, &new_subscription.owner, amount, activation_fee);
+        transfer_tokens_to_current_contract(&e, &new_subscription.owner, amount, init_fee);
 
         //todo: check if the subscription is valid and the amount is enough
         let subscription_id = e.get_last_subscription_id() + 1;
@@ -221,12 +219,14 @@ impl SubscriptionContract {
             threshold: new_subscription.threshold,
             heartbeat: new_subscription.heartbeat,
             webhook: new_subscription.webhook,
-            balance: amount - activation_fee,
+            balance: amount - init_fee,
             status: SubscriptionStatus::Active,
             updated: now(&e), // normalize to milliseconds
         };
         e.set_subscription(subscription_id, &subscription);
         e.set_last_subscription_id(subscription_id);
+        
+        e.extend_subscription_ttl(subscription_id, calc_ledgers_to_live(&e, &subscription_fee, &subscription.balance));
         let data = (subscription_id, subscription.clone());
         e.events()
             .publish((REFLECTOR, symbol_short!("created"), subscription.owner), data.clone());
@@ -257,20 +257,19 @@ impl SubscriptionContract {
             .get_subscription(subscription_id)
             .unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound));
         let mut burn_amount = 0;
-        let fee = e.get_fee();
+
+        let subscription_fee = calc_fee(&e, &subscription.heartbeat, &subscription.threshold);
+
         match subscription.status {
             SubscriptionStatus::Suspended => {
                 // Check if the subscription is suspended
-                if amount < fee {
+                if amount < subscription_fee {
                     e.panic_with_error(Error::InvalidAmount);
                 }
                 // Set the activation fee as the burn amount
-                burn_amount = fee;
+                burn_amount = subscription_fee;
                 subscription.status = SubscriptionStatus::Active;
-            }
-            SubscriptionStatus::Cancelled => {
-                e.panic_with_error(Error::InvalidSubscriptionStatusError);
-            }
+            },
             _ => {}
         }
 
@@ -279,6 +278,7 @@ impl SubscriptionContract {
 
         subscription.balance += amount - burn_amount;
         e.set_subscription(subscription_id, &subscription);
+        e.extend_subscription_ttl(subscription_id, calc_ledgers_to_live(&e, &subscription_fee, &subscription.balance));
         e.events().publish(
             (REFLECTOR, symbol_short!("deposited"), subscription.owner.clone()),
             (subscription_id, subscription, amount),
@@ -297,7 +297,7 @@ impl SubscriptionContract {
     // # Panics if the token transfer fails
     pub fn cancel(e: Env, subscription_id: u64) {
         panic_if_not_initialized(&e);
-        let mut subscription = e
+        let subscription = e
             .get_subscription(subscription_id)
             .unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound));
         subscription.owner.require_auth();
@@ -314,9 +314,7 @@ impl SubscriptionContract {
             &subscription.owner,
             subscription.balance,
         );
-        subscription.status = SubscriptionStatus::Cancelled;
-        subscription.balance = 0;
-        e.set_subscription(subscription_id, &subscription);
+        e.remove_subscription(subscription_id);
         e.events()
             .publish((REFLECTOR, symbol_short!("cancelled"), subscription.owner), subscription_id);
     }
@@ -409,6 +407,20 @@ fn transfer_tokens(e: &Env, from: &Address, to: &Address, amount: u64) {
 
 fn now(e: &Env) -> u64 {
     e.ledger().timestamp() * 1000 // normalize to milliseconds
+}
+
+fn calc_fee(e: &Env, heartbeat: &u32, threshold: &u32) -> u64 {
+    //implement the fee calculation logic here
+    e.get_fee()
+}
+
+fn calc_ledgers_to_live(e: &Env, fee: &u64, amount: &u64) -> u32 {
+    let days: u32 = ((amount + fee - 1) / fee) as u32;
+    let ledgers = days * 17280;
+    if ledgers > e.storage().max_ttl() {
+        panic_with_error!(e, Error::InvalidAmount);
+    }
+    ledgers
 }
 
 mod test;

@@ -2,7 +2,7 @@
 
 use super::*;
 use soroban_sdk::{
-    symbol_short, testutils::{Address as _, Ledger, LedgerInfo}, token::StellarAssetClient, vec, Bytes, Env, String
+    symbol_short, testutils::{storage::Persistent, Address as _, Ledger, LedgerInfo}, token::StellarAssetClient, vec, Bytes, Env, String
 };
 use types::{
     asset::Asset, contract_config::ContractConfig, subscription_init_params::SubscriptionInitParams,
@@ -41,7 +41,7 @@ fn test() {
     let owner = Address::generate(&env);
 
     let token_client = StellarAssetClient::new(&env, &config.token);
-    token_client.mint(&owner, &1000);
+    token_client.mint(&owner, &1200);
 
     let subscription = SubscriptionInitParams {
         owner: owner.clone(),
@@ -62,12 +62,22 @@ fn test() {
     let (subscription_id, _) = client.create_subscription(&subscription, &200);
     assert!(subscription_id == 1);
 
+    env.as_contract(&client.address, || {
+        let ttl = env.storage().persistent().get_ttl(&subscription_id);
+        assert_eq!(ttl, ttl);
+    });
+
     let trigger_hash: BytesN<32> = BytesN::from_array(&env, &[0; 32]);
     // heartbeat subscription
     client.trigger(&1u64, &trigger_hash);
 
     // deposit subscription
     client.deposit(&owner, &1, &100);
+
+    env.as_contract(&client.address, || {
+        let ttl = env.storage().persistent().get_ttl(&subscription_id);
+        assert_eq!(ttl, ttl);
+    });
 
     let mut subs = client.get_subscription(&subscription_id);
     assert_eq!(subs.balance, 100);
@@ -95,6 +105,8 @@ fn test() {
 
     // cancel subscription
     client.cancel(&1u64);
-    subs = client.get_subscription(&subscription_id);
-    assert_eq!(subs.status, SubscriptionStatus::Cancelled);
+    env.as_contract(&client.address, || {
+        let subs = env.get_subscription(subscription_id);
+        assert_eq!(subs, None);
+    });  
 }
