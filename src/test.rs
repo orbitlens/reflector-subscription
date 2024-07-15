@@ -70,7 +70,7 @@ fn test() {
     client.deposit(&owner, &1, &100);
 
     let mut subs = client.get_subscription(&subscription_id);
-    assert_eq!(subs.balance, 200);
+    assert_eq!(subs.balance, 100);
 
     let ledger_info = env.ledger().get();
     env.ledger().set(LedgerInfo {

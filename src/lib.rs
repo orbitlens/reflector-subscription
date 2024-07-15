@@ -81,7 +81,7 @@ impl SubscriptionContract {
     pub fn trigger(e: Env, timestamp: u64, trigger_hash: BytesN<32>) {
         e.panic_if_not_admin();
         e.events().publish(
-            (REFLECTOR, symbol_short!("activated")),
+            (REFLECTOR, symbol_short!("triggered")),
             (timestamp, trigger_hash),
         );
     }
@@ -115,7 +115,6 @@ impl SubscriptionContract {
         let mut total_charge: u64 = 0;
         let now = now(&e);
         let fee = e.get_fee();
-        let mut events = Vec::new(&e);
         for subscription_id in subscription_ids.iter() {
             if let Some(mut subscription) = e.get_subscription(subscription_id) {
                 let days = (now - subscription.updated) / DAY;
@@ -131,25 +130,25 @@ impl SubscriptionContract {
                 if subscription.balance < fee {
                     // Deactivate the subscription if the balance is less than the fee
                     subscription.status = SubscriptionStatus::Suspended;
-                    events.push_back((
+                    e.events().publish(
                         (
                             REFLECTOR,
                             symbol_short!("suspended"),
                             subscription.owner.clone(),
                         ),
                         (now, subscription_id),
-                    ));
+                    );
                 }
                 e.set_subscription(subscription_id, &subscription);
 
-                events.push_back((
+                e.events().publish(
                     (
                         REFLECTOR,
                         symbol_short!("charged"),
                         subscription.owner,
                     ),
                     (now, subscription_id),
-                ));
+                );
 
                 total_charge += charge;
             }
@@ -157,9 +156,6 @@ impl SubscriptionContract {
         // If there is nothing to charge, return
         if total_charge == 0 {
             return;
-        }
-        for (event, data) in events.iter() {
-            e.events().publish(event, data);
         }
 
         //Burn the tokens
@@ -196,7 +192,7 @@ impl SubscriptionContract {
         new_subscription.owner.require_auth();
 
         // Check the amount
-        let activation_fee = e.get_fee() * MIN_FEE_FACTOR;
+        let activation_fee = e.get_fee() * MIN_FEE_FACTOR * 2;
         if amount < activation_fee {
             e.panic_with_error(Error::InvalidAmount);
         }
@@ -205,7 +201,7 @@ impl SubscriptionContract {
             e.panic_with_error(Error::InvalidHeartbeat);
         }
 
-        if new_subscription.threshold == 0 || new_subscription.threshold > 1000 {
+        if new_subscription.threshold == 0 || new_subscription.threshold > 10000 {
             e.panic_with_error(Error::InvalidThreshold);
         }
 
