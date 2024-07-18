@@ -109,4 +109,7 @@ fn test() {
         let subs = env.get_subscription(subscription_id);
         assert_eq!(subs, None);
     });  
+
+    let last_id = client.last_id();
+    assert_eq!(last_id, 1);
 }

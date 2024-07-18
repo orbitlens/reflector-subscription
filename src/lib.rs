@@ -143,7 +143,7 @@ impl SubscriptionContract {
                         symbol_short!("charged"),
                         subscription.owner,
                     ),
-                    (now, subscription_id),
+                    (now, subscription_id, charge),
                 );
 
                 total_charge += charge;
@@ -336,6 +336,15 @@ impl SubscriptionContract {
         panic_if_not_initialized(&e);
         e.get_subscription(subscription_id)
             .unwrap_or_else(|| panic_with_error!(e, Error::SubscriptionNotFound))
+    }
+
+    // Gets the last subscription ID.
+    //
+    // # Returns
+    // Last subscription ID
+    pub fn last_id(e: Env) -> u64 {
+        panic_if_not_initialized(&e);
+        e.get_last_subscription_id()
     }
 
     // Returns admin address of the contract.
