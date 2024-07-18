@@ -110,13 +110,13 @@ impl SubscriptionContract {
         e.panic_if_not_admin();
         let mut total_charge: u64 = 0;
         let now = now(&e);
-        let fee = e.get_fee();
         for subscription_id in subscription_ids.iter() {
             if let Some(mut subscription) = e.get_subscription(subscription_id) {
                 let days = (now - subscription.updated) / DAY;
                 if days == 0 {
                     continue;
                 }
+                let fee = calc_fee(&e, &subscription.heartbeat, &subscription.threshold);
                 let mut charge = days * fee;
                 if subscription.balance < charge {
                     charge = subscription.balance;
